@@ -49,7 +49,7 @@ library PleaText {
                     || (c >= 0x1d173 && c <= 0x1d17a) || c == 0x180e || (c >= 0x200b && c <= 0x200f)
                     || (c >= 0x2028 && c <= 0x202e) || (c >= 0x2060 && c <= 0x206f) || (c >= 0xfe00 && c <= 0xfe0f)
                     || c == 0xfeff || (c >= 0xe0000 && c <= 0xe007f) || (c >= 0xe0100 && c <= 0xe01ef)
-                    || (c >= 0x180b && c <= 0x180d)
+                    || (c >= 0x180b && c <= 0x180f)
             ) revert InvalidText();
             if (c == 0x5b) {
                 if (_matches(b, i, bytes("[PLEA")) || _matches(b, i, bytes("[/PLEA"))) revert InvalidText();

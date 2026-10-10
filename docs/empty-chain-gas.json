@@ -10,8 +10,8 @@
     },
     {
       "action": "atomic four-contract launch",
-      "estimated": 7649555,
-      "used": 7645134
+      "estimated": 7745108,
+      "used": 7740686
     },
     {
       "action": "fixture PoolManager",
@@ -45,13 +45,13 @@
     },
     {
       "action": "fixture MineSalt",
-      "estimated": 4747783,
-      "used": 4747783
+      "estimated": 4793456,
+      "used": 4793456
     },
     {
       "action": "deployHook",
-      "estimated": 4688899,
-      "used": 4686790
+      "estimated": 4734694,
+      "used": 4732585
     },
     {
       "action": "seed",
@@ -90,13 +90,13 @@
     },
     {
       "action": "buy first credit",
-      "estimated": 2949393,
-      "used": 1858127
+      "estimated": 2949466,
+      "used": 1858146
     },
     {
       "action": "buy subsequent credit",
-      "estimated": 2739329,
-      "used": 451969
+      "estimated": 2739403,
+      "used": 451984
     },
     {
       "action": "fixture pause vault",
@@ -105,8 +105,8 @@
     },
     {
       "action": "buy credit revert fallback",
-      "estimated": 2739360,
-      "used": 406004
+      "estimated": 2739433,
+      "used": 406019
     },
     {
       "action": "fixture unpause vault",
@@ -115,8 +115,8 @@
     },
     {
       "action": "submitSell",
-      "estimated": 2101177,
-      "used": 2061377
+      "estimated": 2113357,
+      "used": 2073557
     },
     {
       "action": "fixture GasOracleSigner",
@@ -125,13 +125,13 @@
     },
     {
       "action": "clearNoVerdict",
-      "estimated": 36248,
-      "used": 31448
+      "estimated": 33843,
+      "used": 29043
     },
     {
       "action": "submitSell retry",
-      "estimated": 984185,
-      "used": 939585
+      "estimated": 993565,
+      "used": 948965
     },
     {
       "action": "oracle deny",
@@ -140,8 +140,8 @@
     },
     {
       "action": "appeal",
-      "estimated": 1297524,
-      "used": 1237824
+      "estimated": 1309054,
+      "used": 1249354
     },
     {
       "action": "oracle approve",
@@ -150,13 +150,13 @@
     },
     {
       "action": "executeSell",
-      "estimated": 2736922,
-      "used": 494157
+      "estimated": 2734003,
+      "used": 491888
     },
     {
       "action": "rebalance",
-      "estimated": 281474,
-      "used": 246847
+      "estimated": 287253,
+      "used": 252447
     },
     {
       "action": "setMerkleRoot",
@@ -165,18 +165,18 @@
     },
     {
       "action": "claim",
-      "estimated": 118096,
-      "used": 117825
+      "estimated": 118120,
+      "used": 117849
     },
     {
       "action": "killCabal",
-      "estimated": 37613,
-      "used": 37613
+      "estimated": 46172,
+      "used": 46172
     },
     {
       "action": "sellFreely",
-      "estimated": 3309682,
-      "used": 991942
+      "estimated": 3309688,
+      "used": 991896
     }
   ],
   "compiler": {
@@ -189,9 +189,9 @@
   "fixtures": "Constructed v4 PoolManager; verified Stacker source; test ERC20/ERC4626/Intake/ERC1271 services. No live transaction.",
   "creationBytecodeSha256": {
     "PLEA": "c868d477597b88ec30274c5a5fea39f1ae766dac91814ba326a475c333d0c039",
-    "CabalGate": "74e3f129bd98b9baca5da5cd1718a9eb0129f4f87bb412e6b072bcc761352c15",
-    "PleaDistributor": "82e7ab842d94d54de33a9db98d4878b33a0751da385a740e604a5b04c2273d68",
-    "PleaLaunch": "122e7caf02fc320d1160f6ff9d4c145969ff7b64c441c80faeaa0ecdeab00f9a",
-    "PleaHook": "757f850c7603dd6fdeb5435f25b6869daf7042f9a33db975546f6ff5d13b152c"
+    "CabalGate": "33895eeaafe40390bac23002bd34e4934a239deb50f19acf066d79540fa8bdc2",
+    "PleaDistributor": "181fb46672b54b48b03fc54d5f30730c9f747bf2c66abe6cf05f7a35e4451d50",
+    "PleaLaunch": "0430a55214bbc8543452d964f5d844cf3dbd183bb1f34aec541fa68cf4bcfd40",
+    "PleaHook": "750210cc4fd7c9f106c02abf250d46d3b6b72642401625984e651c4147dedd99"
   }
 }

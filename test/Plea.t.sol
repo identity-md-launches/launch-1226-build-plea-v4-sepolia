@@ -8,6 +8,8 @@ import {IHooks} from "v4-core/interfaces/IHooks.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
+import {Hooks} from "v4-core/libraries/Hooks.sol";
+import {CustomRevert} from "v4-core/libraries/CustomRevert.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PLEA} from "../src/PLEA.sol";
 import {CabalGate} from "../src/CabalGate.sol";
@@ -357,6 +359,127 @@ contract PleaTest is Test {
         token.transfer(address(manager), 1 ether);
     }
 
+    function testDeadmanStartsAtDelayedSeedAndExpiresAtBoundary() public {
+        vm.warp(START - 40 hours);
+        PLEA t = new PLEA(address(this));
+        CabalGate g = new CabalGate(address(t));
+        PleaDistributor d = new PleaDistributor(address(t), address(this));
+        PleaLaunch l = new PleaLaunch(address(t), address(g), address(d), START);
+        vm.warp(START - 7 hours);
+        vm.expectRevert();
+        g.killCabal(); // No hook yet.
+        bytes memory initcode = miner.initcode(address(t), address(g), address(this));
+        (bool found, bytes32 mined,,) = miner.run(address(l), keccak256(initcode), 0, 200_000);
+        require(found, "salt not found");
+        l.deployHook(mined, initcode);
+        vm.prank(BOB);
+        vm.expectRevert(CabalGate.CabalStillAlive.selector);
+        g.killCabal(); // A deployed hook without a seeded pool cannot start the clock.
+        vm.warp(START);
+        vm.prank(BOB);
+        l.seed();
+        vm.expectRevert(CabalGate.CabalStillAlive.selector);
+        g.killCabal();
+        vm.warp(START + 33 hours - 1);
+        vm.expectRevert(CabalGate.CabalStillAlive.selector);
+        g.killCabal();
+        vm.warp(START + 33 hours);
+        vm.prank(BOB);
+        g.killCabal();
+        assertTrue(t.cabalDead());
+        vm.expectRevert(CabalGate.CabalStillAlive.selector);
+        g.killCabal();
+    }
+
+    function testAppealTimeoutKeepsDenialCooldown() public {
+        _appealNoVerdictKeepsCooldown(0);
+    }
+
+    function testAppealCompletedKeepsDenialCooldown() public {
+        _appealNoVerdictKeepsCooldown(1);
+    }
+
+    function testAppealLateCallbackKeepsDenialCooldown() public {
+        _appealNoVerdictKeepsCooldown(2);
+    }
+
+    function _appealNoVerdictKeepsCooldown(uint8 mode) private {
+        _afterLaunch();
+        uint256 amount = _buy(ALICE, 10 ether) / 10;
+        uint256 id = _submit(ALICE, amount);
+        _verdict(id, false);
+        uint256 deadline = gate.nextAllowedAt(ALICE);
+        vm.prank(ALICE);
+        uint256 appealId = gate.appeal(id, amount, "Please reconsider my rent.");
+        if (mode == 1) {
+            intake.completeWithoutVerdict(gate.pleas(appealId).intakeId);
+            vm.warp(block.timestamp + 12);
+        } else {
+            vm.warp(block.timestamp + 20 minutes);
+        }
+        if (mode == 2) _verdict(appealId, true); // Late delivery is ignored, not a verdict.
+        vm.prank(ALICE);
+        gate.clearNoVerdict();
+        assertEq(uint256(gate.pleas(appealId).status), uint256(CabalGate.Status.NoVerdict));
+        assertEq(gate.openPlea(ALICE), 0);
+        assertEq(gate.nextAllowedAt(ALICE), deadline, "no-verdict erased denial cooldown");
+        assertEq(gate.lastVerdictAt(), uint256(gate.pleas(id).verdictAt));
+        uint256 feeBalance = feeToken.balanceOf(ALICE);
+        vm.prank(ALICE);
+        vm.expectRevert(CabalGate.Cooldown.selector);
+        gate.submitSell(amount, "Fresh plea, no wait.");
+        assertEq(feeToken.balanceOf(ALICE), feeBalance);
+        vm.warp(deadline - 1);
+        vm.prank(ALICE);
+        vm.expectRevert(CabalGate.Cooldown.selector);
+        gate.submitSell(amount, "Too early.");
+        vm.warp(deadline);
+        uint256 next = _submit(ALICE, amount);
+        assertEq(gate.openPlea(ALICE), next);
+    }
+
+    function testSubmissionRefreshesCurrentHourCheckpoint() public {
+        _afterLaunch();
+        uint256 balance = _buy(ALICE, 100 ether);
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        _buy(BOB, 20_000 ether);
+        vm.warp(block.timestamp + 1 days + 1);
+        vm.roll(block.number + 1);
+        uint256 amount = balance / 10;
+        uint256 stale = gate.factScore(ALICE, amount);
+        uint256 id = _submit(ALICE, amount);
+        hook.checkpoint();
+        uint256 current = gate.factScore(ALICE, amount);
+        assertTrue(stale != current, "fixture must have a new confirmed price");
+        assertEq(gate.pleas(id).score, current, "submission used stale checkpoint");
+        assertEq(hook.latestCheckpointHour(), vm.getBlockTimestamp() / 1 hours);
+    }
+
+    function testThirdPartyRouterCannotChangeHolderLedger() public {
+        _afterLaunch();
+        uint256 balance = _buy(ALICE, 10 ether);
+        uint256 average = hook.averageBuyTime(ALICE);
+        uint256 basis = hook.costBasis(ALICE);
+        vm.warp(average + 7 days + 30 minutes);
+        vm.roll(block.number + 1);
+        uint256 score = gate.factScore(ALICE, balance * 15 / 100);
+        HostileRouter router = new HostileRouter();
+        imd.mint(address(router), 10 ether);
+        uint160 limit = _limit();
+        vm.prank(BOB);
+        (bool ok,) = address(router).call(abi.encodeCall(router.attack, (hook, 0, abi.encode(ALICE), limit)));
+        assertEq(hook.averageBuyTime(ALICE), average, "third party changed holding time");
+        assertEq(hook.costBasis(ALICE), basis, "third party changed cost basis");
+        assertEq(token.balanceOf(ALICE), balance);
+        assertEq(gate.factScore(ALICE, balance * 15 / 100), score);
+        assertFalse(ok, "unauthenticated router must be refused");
+        // The authenticated trader can still buy and update their own ledger.
+        uint256 bought = _buy(ALICE, 1 ether);
+        assertEq(hook.costBasis(ALICE), basis + 1 ether);
+        assertEq(hook.averageBuyTime(ALICE), (average * balance + vm.getBlockTimestamp() * bought) / (balance + bought));
+    }
+
     function testLaunchFeeDecayAndMaxBuy() public {
         assertEq(hook.launchFeeBps(), 7000);
         _buy(ALICE, 10 ether);
@@ -375,12 +498,101 @@ contract PleaTest is Test {
         bytes32 root = keccak256(bytes.concat(keccak256(abi.encode(ALICE, 10 ether))));
         distributor.setMerkleRoot(root);
         bytes32[] memory proof = new bytes32[](0);
+        vm.prank(ALICE);
         distributor.claim(ALICE, 10 ether, proof);
         assertEq(token.balanceOf(ALICE), 10 ether);
+        vm.prank(ALICE);
         vm.expectRevert(PleaDistributor.InvalidClaim.selector);
         distributor.claim(ALICE, 10 ether, proof);
         vm.expectRevert(PleaDistributor.RootAlreadySet.selector);
         distributor.setMerkleRoot(root);
+    }
+
+    function testThirdPartyCannotForceDistributionHoldingClock() public {
+        _afterLaunch();
+        uint256 balance = _buy(ALICE, 10 ether);
+        distributor.setMerkleRoot(keccak256(bytes.concat(keccak256(abi.encode(ALICE, balance)))));
+        uint256 average = hook.averageBuyTime(ALICE);
+        uint256 basis = hook.costBasis(ALICE);
+        vm.warp(average + 7 days + 1);
+        uint256 score = gate.factScore(ALICE, balance * 15 / 100);
+        vm.prank(BOB);
+        (bool ok,) = address(distributor).call(abi.encodeCall(distributor.claim, (ALICE, balance, new bytes32[](0))));
+        assertEq(hook.averageBuyTime(ALICE), average, "third party changed holding time");
+        assertEq(hook.costBasis(ALICE), basis);
+        assertEq(gate.factScore(ALICE, balance * 15 / 100), score);
+        assertFalse(ok, "only the recipient may claim");
+        assertFalse(distributor.claimed(ALICE));
+        assertEq(token.balanceOf(ALICE), balance);
+        vm.prank(ALICE);
+        distributor.claim(ALICE, balance, new bytes32[](0));
+        assertTrue(distributor.claimed(ALICE));
+        assertEq(token.balanceOf(ALICE), balance * 2);
+        assertEq(hook.averageBuyTime(ALICE), (average + vm.getBlockTimestamp()) / 2);
+        assertEq(hook.costBasis(ALICE), basis);
+    }
+
+    function testDeniedAppealCannotBeAppealedAgain() public {
+        _afterLaunch();
+        uint256 amount = _buy(ALICE, 10 ether) / 10;
+        uint256 id = _submit(ALICE, amount);
+        _verdict(id, false);
+        vm.prank(ALICE);
+        uint256 appealId = gate.appeal(id, amount, "Please reconsider my rent.");
+        _verdict(appealId, false);
+        vm.warp(block.timestamp + 2 minutes);
+        vm.prank(ALICE);
+        vm.expectRevert(CabalGate.AppealUnavailable.selector);
+        gate.appeal(appealId, amount, "An appeal of the appeal.");
+        vm.prank(ALICE);
+        vm.expectRevert(CabalGate.Cooldown.selector);
+        gate.submitSell(amount, "A fresh plea.");
+        vm.warp(gate.nextAllowedAt(ALICE));
+        _submit(ALICE, amount);
+    }
+
+    function testUnfilledBackstopReportsNoConversionOrWork() public {
+        _afterLaunch();
+        _buy(ALICE, 50_000 ether);
+        hook.rebalance();
+        assertEq(hook.retainedIMD(), 0);
+        assertEq(hook.backstopConvertedIMD(), 0, "rounding is not conversion");
+        (,, uint128 liquidity, uint256 principal) = hook.backstop();
+        uint256 burned = hook.totalBurned();
+        uint256 reserve = hook.tipReserve();
+        vm.warp(block.timestamp + 2 hours);
+        vm.roll(block.number + 1);
+        vm.expectRevert(PleaHook.NoWork.selector);
+        hook.rebalance();
+        (,, uint128 afterLiquidity, uint256 afterPrincipal) = hook.backstop();
+        assertEq(afterLiquidity, liquidity);
+        assertEq(afterPrincipal, principal);
+        assertEq(hook.totalBurned(), burned);
+        assertEq(hook.tipReserve(), reserve);
+    }
+
+    function testFilledBackstopStillReportsConversionAndRebalances() public {
+        _afterLaunch();
+        _buy(ALICE, 50_000 ether);
+        hook.rebalance();
+        (,,, uint256 principal) = hook.backstop();
+        assertEq(hook.backstopConvertedIMD(), 0);
+        // The distribution supplies enough PLEA to sell through the main range into the wall.
+        uint256 distribution = 100_000_000 ether;
+        distributor.setMerkleRoot(keccak256(bytes.concat(keccak256(abi.encode(ALICE, distribution)))));
+        vm.prank(ALICE);
+        distributor.claim(ALICE, distribution, new bytes32[](0));
+        vm.warp(hook.seededAt() + 33 hours);
+        gate.killCabal();
+        uint256 balance = token.balanceOf(ALICE);
+        vm.prank(ALICE);
+        gate.sellFreely(balance, 0);
+        assertGt(hook.backstopConvertedIMD(), 0, "a real fill must still count");
+        assertLe(hook.backstopConvertedIMD(), principal);
+        uint256 burned = hook.totalBurned();
+        hook.rebalance();
+        assertGt(hook.totalBurned(), burned, "converted wall PLEA must burn");
+        assertEq(hook.backstopConvertedIMD(), 0);
     }
 
     function testCheckpointAndWeightedBasis() public {
@@ -409,6 +621,7 @@ contract PleaTest is Test {
         assertGt(principal, 0);
         assertEq(imd.balanceOf(BOB), before); // Only 1.25 IMD moved: below 100 IMD.
         vm.prank(BOB);
+        vm.expectRevert(PleaHook.NoWork.selector);
         hook.rebalance();
         assertEq(imd.balanceOf(BOB), before);
     }
@@ -687,6 +900,7 @@ contract PleaTest is Test {
         vm.warp(vm.getBlockTimestamp() + 1 hours);
         before = imd.balanceOf(BOB);
         vm.prank(BOB);
+        vm.expectRevert(PleaHook.NoWork.selector);
         hook.rebalance();
         assertEq(imd.balanceOf(BOB), before);
     }
@@ -771,7 +985,14 @@ contract PleaTest is Test {
         HostileRouter router = new HostileRouter();
         imd.mint(address(router), 100 ether);
         uint160 limit = _limit();
-        vm.expectRevert(IPoolManager.CurrencyNotSettled.selector);
+        bytes memory unauthorized = abi.encodeWithSelector(
+            CustomRevert.WrappedError.selector,
+            address(hook),
+            IHooks.beforeSwap.selector,
+            abi.encodeWithSelector(PleaHook.Unauthorized.selector),
+            abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+        );
+        vm.expectRevert(unauthorized);
         router.attack(hook, 1, abi.encode(ALICE), limit);
         assertEq(token.balanceOf(ALICE), 0);
         assertEq(manager.balanceOf(address(router), uint256(uint160(address(token)))), 0);
@@ -783,7 +1004,10 @@ contract PleaTest is Test {
         router.attack(hook, 0, abi.encode(address(manager)), limit);
         vm.expectRevert();
         router.attack(hook, 3, abi.encode(ALICE), limit);
+        vm.expectRevert(unauthorized);
         router.attack(hook, 0, abi.encode(ALICE), limit);
+        assertEq(token.balanceOf(ALICE), 0);
+        _buy(ALICE, 10 ether);
         assertGt(token.balanceOf(ALICE), 0);
     }
 
@@ -851,6 +1075,7 @@ contract PleaTest is Test {
         (,, uint128 liq, uint256 principal) = h.backstop();
         assertGt(liq, 0);
         assertGt(principal, 0);
+        assertEq(h.backstopConvertedIMD(), 0);
         assertEq(t.balanceOf(address(g)), 0);
         assertEq(t.balanceOf(address(h)), 0);
     }
@@ -869,6 +1094,7 @@ contract PleaTest is Test {
     function testDistributionHoldingClockAllowsLaterPlea() public {
         bytes32 root = keccak256(bytes.concat(keccak256(abi.encode(ALICE, 100 ether))));
         distributor.setMerkleRoot(root);
+        vm.prank(ALICE);
         distributor.claim(ALICE, 100 ether, new bytes32[](0));
         assertEq(hook.costBasis(ALICE), 0);
         uint256 receivedAt = hook.averageBuyTime(ALICE);

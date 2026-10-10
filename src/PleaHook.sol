@@ -259,9 +259,10 @@ contract PleaHook {
         checkpoint();
         uint256 input = uint256(-params.amountSpecified);
         bool buy = params.zeroForOne != plea0;
+        // Only the gate authenticates the buy recipient whose holding time and basis we update.
+        if ((buy || !token.cabalDead()) && sender != gate) revert Unauthorized();
         Currency inputCurrency = Currency.wrap(buy ? Addresses.IMD : address(token));
         if (MANAGER.currencyDelta(sender, inputCurrency) < int256(input)) revert PrepayRequired();
-        if (!buy && !token.cabalDead() && sender != gate) revert Unauthorized();
         if (buy) {
             uint256 denominator = BPS - 125 - launchFeeBps();
             uint256 budget = input * denominator / BPS;
@@ -397,7 +398,8 @@ contract PleaHook {
     }
 
     function tokensInPool() public view returns (uint256) {
-        (uint256 a, uint256 b) = MarketMath.amounts(currentSqrtPriceX96(), tickLower, tickUpper, positionLiquidity);
+        (uint256 a, uint256 b) =
+            MarketMath.amounts(currentSqrtPriceX96(), tickLower, tickUpper, positionLiquidity, false);
         return plea0 ? a : b;
     }
 
@@ -429,7 +431,8 @@ contract PleaHook {
     function backstopConvertedIMD() public view returns (uint256) {
         Band memory b = backstop;
         if (b.liquidity == 0) return 0;
-        (uint256 a0, uint256 a1) = MarketMath.amounts(currentSqrtPriceX96(), b.lower, b.upper, b.liquidity);
+        // Match the rounding used when v4 charged the principal; deposit dust is not a fill.
+        (uint256 a0, uint256 a1) = MarketMath.amounts(currentSqrtPriceX96(), b.lower, b.upper, b.liquidity, true);
         uint256 remaining = plea0 ? a1 : a0;
         return b.principal > remaining ? b.principal - remaining : 0;
     }

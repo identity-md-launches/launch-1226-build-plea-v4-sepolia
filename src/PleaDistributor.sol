@@ -56,6 +56,8 @@ contract PleaDistributor {
 
     /// @notice Standard double-hashed leaf: keccak256(bytes.concat(keccak256(abi.encode(account, amount)))).
     function claim(address account, uint256 amount, bytes32[] calldata proof) external {
+        // Receipt changes the holding-time ledger, so its timing belongs to the recipient.
+        if (msg.sender != account) revert Unauthorized();
         if (account == address(0) || amount == 0 || proof.length > 64 || claimed[account] || merkleRoot == bytes32(0)) {
             revert InvalidClaim();
         }

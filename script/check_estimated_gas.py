@@ -190,7 +190,7 @@ def main():
         verdict(request_id(appealed),True,2)
         tx("executeSell",gate,call_data("executeSell(uint256)",0),trader)
         tx("rebalance",hook,call_data("rebalance()"),keeper)
-        # One-account double-hashed distribution, then third-party proof submission.
+        # One-account double-hashed distribution, claimed by its recipient.
         leaf=cast("keccak",cast("keccak","0x"+word(keeper)+word(10**18)))
         tx("setMerkleRoot",distributor,call_data("setMerkleRoot(bytes32)",leaf))
         tx("claim",distributor,call_data("claim(address,uint256,bytes32[])",keeper,10**18,"[]"),keeper)

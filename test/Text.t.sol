@@ -74,6 +74,16 @@ contract TextTest is Test {
         harness.validate(string(bytes.concat(max, bytes("x"))));
     }
 
+    function testMongolianVariationSelectorsAreRejected() public {
+        for (uint8 last = 0x8b; last <= 0x8f; ++last) {
+            vm.expectRevert(PleaText.InvalidText.selector);
+            harness.validate(string(abi.encodePacked(hex"e1a0", last)));
+        }
+        // Adjacent visible Mongolian characters remain valid.
+        harness.validate(string(hex"e1a08a"));
+        harness.validate(string(hex"e1a090"));
+    }
+
     function testFuzzASCIIProducesValidJSON(bytes memory data) public view {
         uint256 length = data.length % 280 + 1;
         bytes memory text = new bytes(length);

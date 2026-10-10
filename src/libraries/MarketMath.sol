@@ -21,7 +21,7 @@ library MarketMath {
         return uint128(value);
     }
 
-    function amounts(uint160 price, int24 lower, int24 upper, uint128 liquidity)
+    function amounts(uint160 price, int24 lower, int24 upper, uint128 liquidity, bool roundUp)
         internal
         pure
         returns (uint256 a0, uint256 a1)
@@ -30,8 +30,8 @@ library MarketMath {
         uint160 b = TickMath.getSqrtPriceAtTick(upper);
         if (price < a) price = a;
         if (price > b) price = b;
-        a0 = SqrtPriceMath.getAmount0Delta(price, b, liquidity, false);
-        a1 = SqrtPriceMath.getAmount1Delta(a, price, liquidity, false);
+        a0 = SqrtPriceMath.getAmount0Delta(price, b, liquidity, roundUp);
+        a1 = SqrtPriceMath.getAmount1Delta(a, price, liquidity, roundUp);
     }
 
     /// @dev Ratios used here are bounded by the supported tick range. sqrt uses 192-bit precision.

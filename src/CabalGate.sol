@@ -153,7 +153,8 @@ contract CabalGate is OracleAttestationConsumer, ReentrancyGuardTransient {
 
     function _submit(uint256 amount, string memory text, uint256 original) private returns (uint256 id) {
         PleaText.validate(text);
-        // Fact scoring reads the most recent stored checkpoint and never promotes spot itself.
+        // Publish the current hour's eligible prior-block observation before fixing the score.
+        hook().checkpoint();
         uint256 score = factScore(msg.sender, amount);
         if (70 - score > 45) revert CannotPass();
         id = nextPleaId++;
@@ -237,7 +238,7 @@ contract CabalGate is OracleAttestationConsumer, ReentrancyGuardTransient {
 
     function _noVerdict(uint256 id, Plea storage p) private {
         p.status = Status.NoVerdict;
-        nextAllowedAt[p.seller] = 0;
+        // An unanswered appeal cannot cancel the original denial's cooldown.
         if (openPlea[p.seller] == id) openPlea[p.seller] = 0;
         emit NoVerdict(id);
     }
@@ -251,7 +252,8 @@ contract CabalGate is OracleAttestationConsumer, ReentrancyGuardTransient {
         Plea storage original = _pleas[originalId];
         if (
             original.seller != msg.sender || original.status != Status.Denied || original.appealed
-                || block.timestamp >= uint256(original.verdictAt) + COOLDOWN || amount > original.amount
+                || original.originalId != 0 || block.timestamp >= uint256(original.verdictAt) + COOLDOWN
+                || amount > original.amount
         ) revert AppealUnavailable();
         original.appealed = true;
         // Pull only from the authenticated caller, outside PoolManager's callback.
@@ -355,7 +357,10 @@ contract CabalGate is OracleAttestationConsumer, ReentrancyGuardTransient {
     }
 
     function killCabal() external nonReentrant {
-        if (token.cabalDead() || block.timestamp < lastVerdictAt + DEADMAN) revert CabalStillAlive();
+        address h = token.hook();
+        if (token.cabalDead() || h == address(0)) revert CabalStillAlive();
+        uint256 seededAt = PleaHook(h).seededAt();
+        if (seededAt == 0 || block.timestamp < Math.max(lastVerdictAt, seededAt) + DEADMAN) revert CabalStillAlive();
         token.killCabal();
         emit CabalKilled(block.timestamp);
     }
