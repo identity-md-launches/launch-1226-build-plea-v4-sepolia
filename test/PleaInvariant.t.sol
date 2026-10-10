@@ -36,6 +36,7 @@ contract PleaHandler is Test {
     uint256[4] public expectedPLEA;
     bool[4] public didClaim;
     uint256[4] public lastDenied;
+    uint256[4] public expectedNextAllowedAt;
     uint256 public paidRequests;
     uint256 public paidAppeals;
     uint256 public plainCashback;
@@ -132,6 +133,8 @@ contract PleaHandler is Test {
         if (maxAmount > gate.MAX_SELL()) maxAmount = gate.MAX_SELL();
         if (maxAmount < 1 ether || oracleAsset.balanceOf(seller) < 0.5 ether) return;
         uint256 amount = bound(fraction, 1 ether, maxAmount);
+        // Submissions now refresh the eligible checkpoint before fixing the score.
+        hook.checkpoint();
         if (gate.factScore(seller, amount) < 25) return;
         vm.prank(seller);
         uint256 id = gate.submitSell(amount, "Rent is due; I am keeping the rest.");
@@ -167,7 +170,10 @@ contract PleaHandler is Test {
         assertTrue(ok, "valid verdict must finish within 200k");
         assertTrue(gate.consumed(a.requestId));
         ++verdicts;
-        if (!approved) lastDenied[who % 4] = id;
+        if (!approved) {
+            lastDenied[who % 4] = id;
+            expectedNextAllowedAt[who % 4] = block.timestamp + 4 hours;
+        }
     }
 
     function execute(uint256 who, bool paused) external {
@@ -183,6 +189,7 @@ contract PleaHandler is Test {
         uint256 received = gate.executeSell(0);
         assertGt(received, 0);
         expectedPLEA[i] -= p.amount;
+        expectedNextAllowedAt[i] = block.timestamp + 4 hours;
         ++executedSells;
         _end();
         assertEq(gate.openPlea(seller), 0);
@@ -196,7 +203,20 @@ contract PleaHandler is Test {
         if (dead || id == 0 || gate.openPlea(seller) != 0) return;
         CabalGate.Plea memory p = gate.pleas(id);
         if (p.appealed || block.timestamp >= uint256(p.verdictAt) + 4 hours) return;
+        if (p.originalId != 0) {
+            uint256 nextId = gate.nextPleaId();
+            uint256 feeBalance = oracleAsset.balanceOf(seller);
+            uint256 cash = imd.balanceOf(seller);
+            vm.prank(seller);
+            vm.expectRevert(CabalGate.AppealUnavailable.selector);
+            gate.appeal(id, p.amount, "An appeal cannot create another appeal.");
+            assertEq(gate.nextPleaId(), nextId);
+            assertEq(oracleAsset.balanceOf(seller), feeBalance);
+            assertEq(imd.balanceOf(seller), cash);
+            return;
+        }
         if (oracleAsset.balanceOf(seller) < 0.5 ether || imd.balanceOf(seller) < 0.35 ether) return;
+        hook.checkpoint();
         if (gate.factScore(seller, p.amount) < 25) return;
         vm.prank(seller);
         uint256 next = gate.appeal(id, p.amount, "Please reconsider; the rent is still due.");
@@ -235,6 +255,14 @@ contract PleaHandler is Test {
         bytes32[] memory proof = new bytes32[](2);
         proof[0] = leaves[i ^ 1];
         proof[1] = i < 2 ? _pair(leaves[2], leaves[3]) : _pair(leaves[0], leaves[1]);
+        uint256 heldSince = hook.averageBuyTime(actors[i]);
+        uint256 basis = hook.costBasis(actors[i]);
+        vm.prank(actors[(i + 1) % 4]);
+        vm.expectRevert(PleaDistributor.Unauthorized.selector);
+        distributor.claim(actors[i], ENTITLEMENT, proof);
+        assertEq(hook.averageBuyTime(actors[i]), heldSince, "a sponsor cannot reset holding time");
+        assertEq(hook.costBasis(actors[i]), basis);
+        vm.prank(actors[i]);
         if (didClaim[i]) {
             vm.expectRevert(PleaDistributor.InvalidClaim.selector);
             distributor.claim(actors[i], ENTITLEMENT, proof);
@@ -255,6 +283,7 @@ contract PleaHandler is Test {
         _begin();
         vm.prank(keeper);
         hook.rebalance();
+        assertEq(hook.backstopConvertedIMD(), 0, "newly placed wall has no fills");
         uint256 tip = imd.balanceOf(keeper) - beforeBalance;
         keeperTips += tip;
         assertLe(tip, 1 ether);
@@ -289,7 +318,9 @@ contract PleaHandler is Test {
     }
 
     function kill() external {
-        if (dead || block.timestamp < gate.lastVerdictAt() + 33 hours) {
+        uint256 last = gate.lastVerdictAt();
+        if (hook.seededAt() > last) last = hook.seededAt();
+        if (dead || block.timestamp < last + 33 hours) {
             vm.expectRevert(CabalGate.CabalStillAlive.selector);
             gate.killCabal();
             return;
@@ -365,6 +396,7 @@ contract PleaInvariantTest is PleaFixture {
             feeBalances += feeToken.balanceOf(wallets[i]);
             assertEq(token.balanceOf(wallets[i]), handler.expectedPLEA(i), "actor ledger");
             assertEq(distributor.claimed(wallets[i]), handler.didClaim(i), "claim ledger");
+            assertEq(gate.nextAllowedAt(wallets[i]), handler.expectedNextAllowedAt(i), "cooldown survives no verdict");
             assertEq(manager.balanceOf(wallets[i], uint160(address(token))), 0, "no user PLEA claims");
             uint256 open = gate.openPlea(wallets[i]);
             if (open != 0) {
@@ -403,6 +435,14 @@ contract PleaInvariantTest is PleaFixture {
         for (uint256 id = 1; id < gate.nextPleaId(); ++id) {
             CabalGate.Plea memory p = gate.pleas(id);
             assertEq(gate.intakeToPlea(p.intakeId), id);
+            if (p.originalId != 0) {
+                CabalGate.Plea memory original = gate.pleas(p.originalId);
+                assertEq(original.originalId, 0, "no appeal chains");
+                assertTrue(original.appealed);
+                assertEq(original.seller, p.seller);
+                assertLe(p.amount, original.amount);
+                assertFalse(p.appealed, "an appeal is final");
+            }
             bool receivedVerdict = p.status == CabalGate.Status.Approved || p.status == CabalGate.Status.Denied
                 || p.status == CabalGate.Status.Executed || p.status == CabalGate.Status.Expired;
             assertEq(gate.consumed(keccak256(abi.encode("invariant oracle UUID", id))), receivedVerdict);
@@ -438,6 +478,35 @@ contract PleaInvariantTest is PleaFixture {
         assertEq(handler.verdicts(), 2);
         assertEq(handler.expirations(), 1);
         assertGt(handler.plainCashback(), 0);
+        invariantConservationCustodyAndPleaLifecycle();
+    }
+
+    function testHandlerKeepsDenialCooldownsAndRejectsAppealChains() public {
+        for (uint256 i; i < 3; ++i) {
+            handler.submit(i, 1 ether);
+            handler.verdict(i, false);
+            handler.appeal(i);
+        }
+        assertEq(handler.paidAppeals(), 3, "all three appeal paths must be reached");
+        handler.completeWithoutVerdict(0);
+        handler.verdict(2, false);
+        handler.appeal(2); // Must reject an appeal of a denied appeal without charging.
+        handler.elapse(20 minutes, 1);
+        handler.clear(1);
+        assertEq(gate.openPlea(wallets[0]), 0);
+        assertEq(gate.openPlea(wallets[1]), 0);
+        assertEq(gate.openPlea(wallets[2]), 0);
+        for (uint256 i; i < 3; ++i) {
+            handler.submit(i, 1 ether); // Each original denial still imposes its wait.
+        }
+        assertEq(handler.paidRequests(), 6);
+        invariantConservationCustodyAndPleaLifecycle();
+        handler.elapse(4 hours - 20 minutes, 1);
+        for (uint256 i; i < 3; ++i) {
+            handler.submit(i, 1 ether);
+            assertNotEq(gate.openPlea(wallets[i]), 0, "can plead again at the cooldown boundary");
+        }
+        assertEq(handler.paidRequests(), 9);
         invariantConservationCustodyAndPleaLifecycle();
     }
 }

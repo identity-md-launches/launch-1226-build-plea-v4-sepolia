@@ -111,6 +111,35 @@ contract MarketAdversarialTest is PleaFixture {
         assertApproxEqAbs(hook.tokensInPool(), 900_000_000 ether, 1000);
     }
 
+    function testThirdPartyBuyCannotResetHoldingLedgerEvenAfterCabalDeath() public {
+        _afterLaunch();
+        uint256 balance = _buy(ALICE, 10 ether);
+        uint256 average = hook.averageBuyTime(ALICE);
+        uint256 basis = hook.costBasis(ALICE);
+        HostileRouter router = new HostileRouter();
+        imd.mint(address(router), 10 ether);
+        bytes memory unauthorized = _hookError(IHooks.beforeSwap.selector, PleaHook.Unauthorized.selector);
+        uint160 limit = _limit();
+        for (uint256 i; i < 2; ++i) {
+            if (i == 1) {
+                vm.warp(hook.seededAt() + 33 hours);
+                gate.killCabal();
+                assertTrue(token.cabalDead());
+            }
+            vm.prank(BOB);
+            vm.expectRevert(unauthorized);
+            router.attack(hook, 0, abi.encode(ALICE), limit);
+            assertEq(token.balanceOf(ALICE), balance);
+            assertEq(hook.averageBuyTime(ALICE), average);
+            assertEq(hook.costBasis(ALICE), basis);
+            assertEq(imd.balanceOf(address(router)), 10 ether, "rejected funding is rolled back");
+        }
+        uint256 bought = _buy(ALICE, 1 ether);
+        assertEq(token.balanceOf(ALICE), balance + bought);
+        assertEq(hook.costBasis(ALICE), basis + 1 ether);
+        assertGt(hook.averageBuyTime(ALICE), average, "the holder can still update their ledger");
+    }
+
     function testForgedUnlockAndAfterSwapCannotWithdrawPoolReserves() public {
         _afterLaunch();
         _buy(ALICE, 10 ether);
@@ -162,15 +191,17 @@ contract MarketAdversarialTest is PleaFixture {
         assertEq(manager.balanceOf(address(gate), uint160(address(token))), 0);
     }
 
-    function testDistributionInvalidProofsDoNotConsumeClaimAndSponsorCannotRedirect() public {
+    function testDistributionInvalidProofsDoNotConsumeClaimAndOnlyRecipientCanClaim() public {
         uint256 amount = 100 ether;
         bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(ALICE, amount))));
         vm.expectRevert(PleaDistributor.InvalidClaim.selector);
         distributor.setMerkleRoot(bytes32(0));
         distributor.setMerkleRoot(leaf);
         bytes32[] memory empty = new bytes32[](0);
+        vm.prank(BOB);
         vm.expectRevert(PleaDistributor.InvalidClaim.selector);
         distributor.claim(BOB, amount, empty);
+        vm.startPrank(ALICE);
         vm.expectRevert(PleaDistributor.InvalidClaim.selector);
         distributor.claim(ALICE, amount + 1, empty);
         vm.expectRevert(PleaDistributor.InvalidClaim.selector);
@@ -178,9 +209,16 @@ contract MarketAdversarialTest is PleaFixture {
         bytes32[] memory overlong = new bytes32[](65);
         vm.expectRevert(PleaDistributor.InvalidClaim.selector);
         distributor.claim(ALICE, amount, overlong);
+        vm.stopPrank();
         assertFalse(distributor.claimed(ALICE));
         assertEq(token.balanceOf(address(distributor)), 100_000_000 ether);
         vm.prank(BOB);
+        vm.expectRevert(PleaDistributor.Unauthorized.selector);
+        distributor.claim(ALICE, amount, empty);
+        assertFalse(distributor.claimed(ALICE));
+        assertEq(token.balanceOf(ALICE), 0);
+        assertEq(hook.averageBuyTime(ALICE), 0);
+        vm.prank(ALICE);
         distributor.claim(ALICE, amount, empty);
         assertEq(token.balanceOf(ALICE), amount);
         assertEq(token.balanceOf(BOB), 0);

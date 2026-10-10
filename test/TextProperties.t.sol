@@ -62,7 +62,10 @@ contract TextPropertiesTest is Test {
     }
 
     function testBMPAndSupplementaryVariationSelectorRangesAreRejected() public {
-        // U+180F is separately reported with a failing proof in .imd-findings.json.
+        // Includes U+180F, the regression reported in the preceding review.
+        for (uint256 c = 0x180b; c <= 0x180f; ++c) {
+            _reject(_utf8(c));
+        }
         for (uint256 c = 0xfe00; c <= 0xfe0f; ++c) {
             _reject(_utf8(c));
         }

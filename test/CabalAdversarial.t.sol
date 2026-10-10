@@ -268,6 +268,42 @@ contract CabalAdversarialTest is PleaFixture {
         assertEq(intake.lastBody().length, 0);
     }
 
+    function testMongolianSelectorRejectsSubmissionAndAppealWithoutCharging() public {
+        uint256 amount = _buy(ALICE, 10 ether) / 10;
+        string memory hidden = string(bytes.concat(bytes("Rent is due"), hex"e1a08f")); // U+180F
+        uint256 oracleBalance = feeToken.balanceOf(ALICE);
+        uint256 nextId = gate.nextPleaId();
+        vm.prank(ALICE);
+        vm.expectRevert(PleaText.InvalidText.selector);
+        gate.submitSell(amount, hidden);
+        assertEq(feeToken.balanceOf(ALICE), oracleBalance);
+        assertEq(gate.nextPleaId(), nextId);
+        assertEq(gate.openPlea(ALICE), 0);
+        assertEq(intake.lastBody().length, 0);
+
+        uint256 id = _submit(ALICE, amount);
+        _verdict(id, false);
+        uint256 cash = imd.balanceOf(ALICE);
+        uint256 retained = hook.retainedIMD();
+        uint256 cooldown = gate.nextAllowedAt(ALICE);
+        bytes memory body = intake.lastBody();
+        vm.prank(ALICE);
+        vm.expectRevert(PleaText.InvalidText.selector);
+        gate.appeal(id, amount, hidden);
+        assertEq(feeToken.balanceOf(ALICE), oracleBalance - 0.5 ether);
+        assertEq(imd.balanceOf(ALICE), cash);
+        assertEq(hook.retainedIMD(), retained);
+        assertEq(gate.nextAllowedAt(ALICE), cooldown);
+        assertEq(gate.nextPleaId(), id + 1);
+        assertEq(gate.openPlea(ALICE), 0);
+        assertFalse(gate.pleas(id).appealed);
+        assertEq(intake.lastBody(), body);
+        vm.prank(ALICE);
+        uint256 appealId = gate.appeal(id, amount, "A visible plea remains eligible.");
+        assertEq(gate.pleas(appealId).originalId, id);
+        assertTrue(gate.pleas(id).appealed);
+    }
+
     function testAbsoluteSellMaximumAppliesEvenToLargeWallets() public {
         uint256 balance = _buy(ALICE, 1000 ether);
         uint256 maximum = 2_500_000 ether;
