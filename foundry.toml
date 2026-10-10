@@ -1,0 +1,18 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+libs = ["lib"]
+solc = "0.8.26"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+bytecode_hash = "none"
+# Compile sequentially to avoid the previous verifier's memory exhaustion.
+threads = 1
+# The launch factory creates all four applications in one EVM transaction.
+isolate = false
+
+[profile.default.fuzz]
+runs = 128

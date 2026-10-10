@@ -1,0 +1,197 @@
+{
+  "fork": "https://mainnet.gateway.tenderly.co",
+  "baseBlock": 26161618,
+  "hardfork": "osaka",
+  "transactions": [
+    {
+      "action": "fixture DeploymentFactory",
+      "estimated": 188516,
+      "used": 188516
+    },
+    {
+      "action": "atomic four-contract launch",
+      "estimated": 7649567,
+      "used": 7645146
+    },
+    {
+      "action": "fixture PoolManager",
+      "estimated": 3778411,
+      "used": 3778411
+    },
+    {
+      "action": "fixture TestAsset",
+      "estimated": 468429,
+      "used": 468429
+    },
+    {
+      "action": "fixture TestSIMD",
+      "estimated": 983441,
+      "used": 983441
+    },
+    {
+      "action": "fixture Stacker",
+      "estimated": 417850,
+      "used": 417850
+    },
+    {
+      "action": "fixture stacker vault approval",
+      "estimated": 46269,
+      "used": 46269
+    },
+    {
+      "action": "fixture MockIntake",
+      "estimated": 587548,
+      "used": 587548
+    },
+    {
+      "action": "fixture MineSalt",
+      "estimated": 4747783,
+      "used": 4747783
+    },
+    {
+      "action": "deployHook",
+      "estimated": 4688911,
+      "used": 4686802
+    },
+    {
+      "action": "seed",
+      "estimated": 615555,
+      "used": 582876
+    },
+    {
+      "action": "allow",
+      "estimated": 45487,
+      "used": 45487
+    },
+    {
+      "action": "fixture IMD mint",
+      "estimated": 68121,
+      "used": 68121
+    },
+    {
+      "action": "fixture oracle asset mint",
+      "estimated": 68097,
+      "used": 68097
+    },
+    {
+      "action": "approve IMD",
+      "estimated": 46269,
+      "used": 46269
+    },
+    {
+      "action": "approve oracle asset",
+      "estimated": 46269,
+      "used": 46269
+    },
+    {
+      "action": "approve PLEA",
+      "estimated": 46274,
+      "used": 46274
+    },
+    {
+      "action": "buy first credit",
+      "estimated": 2948734,
+      "used": 1857597
+    },
+    {
+      "action": "buy subsequent credit",
+      "estimated": 2738811,
+      "used": 451652
+    },
+    {
+      "action": "fixture pause vault",
+      "estimated": 43605,
+      "used": 43605
+    },
+    {
+      "action": "buy credit revert fallback",
+      "estimated": 2738849,
+      "used": 405693
+    },
+    {
+      "action": "fixture unpause vault",
+      "estimated": 26493,
+      "used": 21693
+    },
+    {
+      "action": "submitSell",
+      "estimated": 2066977,
+      "used": 2027177
+    },
+    {
+      "action": "fixture GasOracleSigner",
+      "estimated": 83267,
+      "used": 83267
+    },
+    {
+      "action": "clearNoVerdict",
+      "estimated": 36248,
+      "used": 31448
+    },
+    {
+      "action": "submitSell retry",
+      "estimated": 984185,
+      "used": 939585
+    },
+    {
+      "action": "oracle deny",
+      "estimated": 253152,
+      "used": 113731
+    },
+    {
+      "action": "appeal",
+      "estimated": 1297524,
+      "used": 1237824
+    },
+    {
+      "action": "oracle approve",
+      "estimated": 253176,
+      "used": 88249
+    },
+    {
+      "action": "executeSell",
+      "estimated": 2737398,
+      "used": 494556
+    },
+    {
+      "action": "rebalance",
+      "estimated": 286260,
+      "used": 251485
+    },
+    {
+      "action": "setMerkleRoot",
+      "estimated": 45004,
+      "used": 45004
+    },
+    {
+      "action": "claim",
+      "estimated": 118096,
+      "used": 117825
+    },
+    {
+      "action": "killCabal",
+      "estimated": 37613,
+      "used": 37613
+    },
+    {
+      "action": "sellFreely",
+      "estimated": 3310156,
+      "used": 987640
+    }
+  ],
+  "compiler": {
+    "solc": "0.8.26",
+    "via_ir": true,
+    "optimizer_runs": 200,
+    "bytecode_hash": "none",
+    "evm_version": "cancun"
+  },
+  "fixtures": "Constructed v4 PoolManager; verified Stacker source; test ERC20/ERC4626/Intake/ERC1271 services. No live transaction.",
+  "creationBytecodeSha256": {
+    "PLEA": "c868d477597b88ec30274c5a5fea39f1ae766dac91814ba326a475c333d0c039",
+    "CabalGate": "74e3f129bd98b9baca5da5cd1718a9eb0129f4f87bb412e6b072bcc761352c15",
+    "PleaDistributor": "82e7ab842d94d54de33a9db98d4878b33a0751da385a740e604a5b04c2273d68",
+    "PleaLaunch": "122e7caf02fc320d1160f6ff9d4c145969ff7b64c441c80faeaa0ecdeab00f9a",
+    "PleaHook": "757f850c7603dd6fdeb5435f25b6869daf7042f9a33db975546f6ff5d13b152c"
+  }
+}
